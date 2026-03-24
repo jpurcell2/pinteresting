@@ -16,7 +16,7 @@ def test_rejects_when_notional_exceeds_limit() -> None:
     engine = _engine()
     allowed, reason = engine.can_trade("BTC-USD", "buy", 150.0)
     assert not allowed
-    assert "per-trade" in reason
+    assert "max_notional_per_trade_usd" in reason
 
 
 def test_rejects_when_daily_loss_limit_breached() -> None:
