@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     coinbase_timeout_seconds: float = 10.0
     default_product_id: str = "BTC-USD"
 
+    sqlite_db_path: str = "data/bot.db"
+    replay_window_seconds: int = 600
+    idempotency_ttl_seconds: int = 72 * 60 * 60
+
     max_notional_per_trade_usd: float = 500.0
     max_position_notional_usd: float = 2500.0
     max_daily_loss_usd: float = 750.0

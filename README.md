@@ -24,15 +24,22 @@ This repository contains a full starter implementation of an "Arch Public style"
   - `POST /webhook/tradingview`
 
 - `app/service.py`  
-  Signal validation + risk checks + dry-run/live order routing.
+  Signal validation + risk checks + idempotency + dry-run/live order routing.
 
 - `app/risk.py`  
-  In-memory risk manager:
+  Risk manager:
   - max notional per trade
   - max notional per symbol position
   - max open symbols
   - max daily realized loss
   - max drawdown from equity high-water mark
+  - persisted state to survive restarts
+
+- `app/persistence.py`
+  SQLite-backed persistence:
+  - risk state snapshots
+  - webhook idempotency records
+  - replay window enforcement support
 
 - `app/coinbase_client.py`  
   Coinbase Advanced Trade REST client using JWT Bearer auth and market IOC order placement.
@@ -63,6 +70,9 @@ Set at minimum:
 - Coinbase credentials for live mode:
   - `COINBASE_API_KEY_NAME`
   - `COINBASE_PRIVATE_KEY_PEM`
+- persistence/replay settings:
+  - `SQLITE_DB_PATH`
+  - `REPLAY_WINDOW_SECONDS`
 
 ### 3) Run API
 
@@ -103,6 +113,21 @@ The strategy emits JSON payloads with fields such as:
 }
 ```
 
+`signal_id` is strongly recommended for deterministic idempotency. If omitted, the API falls back to a stable hash of key alert fields.
+
+## Stateful persistence + replay protection
+
+This implementation now includes:
+
+- **SQLite stateful persistence** (`SQLITE_DB_PATH`, default `data/bot.db`)
+  - risk state is saved and reloaded on startup
+  - processed alerts are recorded with status/result
+- **Idempotency**
+  - duplicate `signal_id` (or fallback derived key) returns the original stored result without re-executing
+- **Replay protection**
+  - alert timestamps older than `REPLAY_WINDOW_SECONDS` are rejected
+  - future timestamps beyond a small clock-skew allowance are rejected
+
 ## Live trading safety checklist
 
 1. Start with `TRADING_ENABLED=false` and verify alerts are accepted.
@@ -128,8 +153,7 @@ pytest -q
 
 ## Production hardening (recommended next)
 
-- persist risk state in Postgres/Redis (current is in-memory)
-- add replay protection / nonce cache to block duplicate webhook events
+- migrate SQLite to managed Postgres/Redis for multi-instance concurrency
 - reconcile fills/positions from Coinbase periodically
 - add structured logs and metrics (Prometheus + alerting)
 - add canary mode for tiny notional before scaling

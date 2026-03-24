@@ -93,29 +93,29 @@ exitShort = strategy.position_size[1] < 0 and strategy.position_size == 0
 
 // -----------------------------
 // Webhook JSON alerts
-// API expects fields: secret, action, symbol, product_id, side, qty_usd, strategy, timeframe
+// API expects fields: secret, signal_id, action, symbol, product_id, side, qty_usd, strategy, timeframe, ts
 // -----------------------------
 if not dailyLockout and longSignal and qtyUsd > 0
     alert(
-         '{"secret":"' + webhookSecret + '","action":"BUY","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"BUY","qty_usd":' + str.tostring(qtyUsd) + ',"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         '{"secret":"' + webhookSecret + '","signal_id":"' + strategyName + '-BUY-' + str.tostring(time) + '","action":"BUY","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"BUY","qty_usd":' + str.tostring(qtyUsd) + ',"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '","ts":' + str.tostring(int(time / 1000)) + '}',
          alert.freq_once_per_bar_close
     )
 
 if not dailyLockout and shortSignal and qtyUsd > 0
     alert(
-         '{"secret":"' + webhookSecret + '","action":"SELL","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"SELL","qty_usd":' + str.tostring(qtyUsd) + ',"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         '{"secret":"' + webhookSecret + '","signal_id":"' + strategyName + '-SELL-' + str.tostring(time) + '","action":"SELL","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"SELL","qty_usd":' + str.tostring(qtyUsd) + ',"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '","ts":' + str.tostring(int(time / 1000)) + '}',
          alert.freq_once_per_bar_close
     )
 
 if exitLong
     alert(
-         '{"secret":"' + webhookSecret + '","action":"EXIT_LONG","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"SELL","qty_usd":1,"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         '{"secret":"' + webhookSecret + '","signal_id":"' + strategyName + '-EXITLONG-' + str.tostring(time) + '","action":"EXIT_LONG","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"SELL","qty_usd":1,"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '","ts":' + str.tostring(int(time / 1000)) + '}',
          alert.freq_once_per_bar_close
     )
 
 if exitShort
     alert(
-         '{"secret":"' + webhookSecret + '","action":"EXIT_SHORT","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"BUY","qty_usd":1,"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         '{"secret":"' + webhookSecret + '","signal_id":"' + strategyName + '-EXITSHORT-' + str.tostring(time) + '","action":"EXIT_SHORT","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"BUY","qty_usd":1,"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '","ts":' + str.tostring(int(time / 1000)) + '}',
          alert.freq_once_per_bar_close
     )
 

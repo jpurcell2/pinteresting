@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, status
 from .config import get_settings
 from .coinbase_client import CoinbaseClient
 from .models import HealthResponse, RiskSnapshot, TVAlert
+from .persistence import PersistenceStore
 from .risk import RiskManager
 from .service import TradingService
 
@@ -18,6 +19,10 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
     logger.info("starting crypto bot API")
+    persistence = PersistenceStore(
+        db_path=settings.sqlite_db_path,
+        processed_alert_ttl_seconds=settings.idempotency_ttl_seconds,
+    )
     risk = RiskManager(
         max_notional_per_trade_usd=settings.max_notional_per_trade_usd,
         max_position_notional_usd=settings.max_position_notional_usd,
@@ -25,6 +30,7 @@ async def lifespan(app: FastAPI):
         max_open_positions=settings.max_open_positions,
         max_drawdown_pct=settings.max_drawdown_pct,
         initial_equity_usd=settings.initial_equity_usd,
+        store=persistence,
     )
     coinbase = CoinbaseClient(
         api_base_url=settings.coinbase_api_base_url,
@@ -36,11 +42,14 @@ async def lifespan(app: FastAPI):
         webhook_secret=settings.webhook_secret,
         coinbase=coinbase,
         risk=risk,
+        store=persistence,
         trading_enabled=settings.trading_enabled,
         dry_run=settings.dry_run,
+        replay_window_seconds=settings.replay_window_seconds,
     )
     app.state.trading_service = service
     yield
+    persistence.close()
     logger.info("stopped crypto bot API")
 
 

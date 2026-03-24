@@ -62,3 +62,11 @@ class RiskSnapshot(BaseModel):
     drawdown_pct: float
     blocked: bool
 
+
+class PersistedAlertRecord(BaseModel):
+    key: str
+    signal_id: str
+    status: Literal["processing", "accepted", "rejected"]
+    message: str
+    response: dict
+

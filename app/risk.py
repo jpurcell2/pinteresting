@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from .models import RiskSnapshot
+from .persistence import PersistenceStore
 
 
 @dataclass
@@ -46,16 +47,27 @@ class RiskManager:
         max_open_positions: int,
         max_drawdown_pct: float,
         initial_equity_usd: float,
+        store: PersistenceStore | None = None,
     ) -> None:
         self.max_notional_per_trade_usd = max_notional_per_trade_usd
         self.max_position_notional_usd = max_position_notional_usd
         self.max_daily_loss_usd = max_daily_loss_usd
         self.max_open_positions = max_open_positions
         self.max_drawdown_pct = max_drawdown_pct
+        self.store = store
         self.state = RiskState(
             peak_equity_usd=initial_equity_usd,
             current_equity_usd=initial_equity_usd,
         )
+        self._load_state_if_exists()
+
+    def restore_state(self, snapshot: RiskSnapshot) -> None:
+        self.state.open_positions = dict(snapshot.open_positions)
+        self.state.realized_pnl_today_usd = snapshot.realized_pnl_today_usd
+        self.state.peak_equity_usd = snapshot.peak_equity_usd
+        self.state.current_equity_usd = snapshot.current_equity_usd
+        self.state.blocked = snapshot.blocked
+        self._persist_state()
 
     def can_trade(self, product_id: str, side: str, notional_usd: float) -> tuple[bool, str]:
         self.state.reset_if_new_day()
@@ -71,10 +83,12 @@ class RiskManager:
 
         if self.state.realized_pnl_today_usd <= -abs(self.max_daily_loss_usd):
             self.state.blocked = True
+            self._persist_state()
             return False, "Daily loss limit breached"
 
         if self.state.drawdown_pct() >= self.max_drawdown_pct:
             self.state.blocked = True
+            self._persist_state()
             return False, "Max drawdown breached"
 
         nonzero_positions = [v for v in self.state.open_positions.values() if abs(v) > 0]
@@ -100,6 +114,7 @@ class RiskManager:
             position = 0.0
         self.state.open_positions[product_id] = position
         self.state.realized_pnl_today_usd += realized_pnl_usd
+        self._persist_state()
 
     def snapshot(self) -> RiskSnapshot:
         self.state.reset_if_new_day()
@@ -110,4 +125,31 @@ class RiskManager:
             current_equity_usd=self.state.current_equity_usd,
             drawdown_pct=self.state.drawdown_pct(),
             blocked=self.state.blocked,
+        )
+
+    def _load_state_if_exists(self) -> None:
+        if self.store is None:
+            return
+        persisted = self.store.load_risk_state()
+        if not persisted:
+            return
+        self.state.current_day = str(persisted.get("current_day", self.state.current_day))
+        self.state.open_positions = dict(persisted.get("open_positions", {}))
+        self.state.realized_pnl_today_usd = float(persisted.get("realized_pnl_today_usd", 0.0))
+        self.state.peak_equity_usd = float(persisted.get("peak_equity_usd", self.state.peak_equity_usd))
+        self.state.current_equity_usd = float(persisted.get("current_equity_usd", self.state.current_equity_usd))
+        self.state.blocked = bool(persisted.get("blocked", False))
+
+    def _persist_state(self) -> None:
+        if self.store is None:
+            return
+        self.store.save_risk_state(
+            {
+                "current_day": self.state.current_day,
+                "open_positions": self.state.open_positions,
+                "realized_pnl_today_usd": self.state.realized_pnl_today_usd,
+                "peak_equity_usd": self.state.peak_equity_usd,
+                "current_equity_usd": self.state.current_equity_usd,
+                "blocked": self.state.blocked,
+            }
         )
