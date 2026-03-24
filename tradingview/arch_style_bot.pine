@@ -1,13 +1,5 @@
 //@version=5
-strategy(
-     "Arch-Style HF Crypto Bot (TV -> Coinbase)",
-     overlay=true,
-     initial_capital=100000,
-     commission_type=strategy.commission.percent,
-     commission_value=0.05,
-     process_orders_on_close=true,
-     pyramiding=0
-)
+strategy("Arch-Style HF Crypto Bot (TV -> Coinbase)", overlay=true, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.05, process_orders_on_close=true, pyramiding=0)
 
 // -----------------------------
 // Inputs
