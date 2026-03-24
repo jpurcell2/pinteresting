@@ -1,0 +1,124 @@
+//@version=5
+strategy(
+     "Arch-Style HF Crypto Bot (TV -> Coinbase)",
+     overlay=true,
+     initial_capital=100000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.05,
+     process_orders_on_close=true,
+     pyramiding=0
+)
+
+// -----------------------------
+// Inputs
+// -----------------------------
+group_signal = "Signal Model"
+group_risk = "Risk Model"
+group_exec = "Execution Payload"
+
+fastLen = input.int(20, "Fast EMA", minval=1, group=group_signal)
+slowLen = input.int(50, "Slow EMA", minval=2, group=group_signal)
+rsiLen = input.int(14, "RSI Length", minval=2, group=group_signal)
+rsiLong = input.int(55, "RSI Long Threshold", minval=1, maxval=100, group=group_signal)
+rsiShort = input.int(45, "RSI Short Threshold", minval=1, maxval=100, group=group_signal)
+adxLen = input.int(14, "ADX Length", minval=2, group=group_signal)
+adxMin = input.float(18.0, "ADX Minimum", minval=1.0, group=group_signal)
+
+atrLen = input.int(14, "ATR Length", minval=1, group=group_risk)
+atrStopMult = input.float(1.8, "ATR Stop Mult", minval=0.2, group=group_risk)
+atrTpMult = input.float(3.0, "ATR TP Mult", minval=0.5, group=group_risk)
+riskPctPerTrade = input.float(0.75, "Risk % / Trade", minval=0.1, maxval=5.0, group=group_risk)
+maxDailyLossPct = input.float(2.5, "Daily Loss Lockout %", minval=0.1, maxval=20.0, group=group_risk)
+maxLeverage = input.float(1.0, "Max Gross Leverage", minval=1.0, maxval=5.0, group=group_risk)
+
+productId = input.string("BTC-USD", "Coinbase Product", group=group_exec)
+webhookSecret = input.string("change-me-now", "Webhook Secret", group=group_exec)
+strategyName = input.string("arch_style_hf_v1", "Strategy ID", group=group_exec)
+
+// -----------------------------
+// Features
+// -----------------------------
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+rsi = ta.rsi(close, rsiLen)
+adx = ta.adx(adxLen)
+atr = ta.atr(atrLen)
+
+trendUp = emaFast > emaSlow
+trendDown = emaFast < emaSlow
+trendFilter = adx > adxMin
+
+longSignal = trendUp and trendFilter and ta.crossover(emaFast, emaSlow) and rsi > rsiLong
+shortSignal = trendDown and trendFilter and ta.crossunder(emaFast, emaSlow) and rsi < rsiShort
+
+// -----------------------------
+// Daily lockout
+// -----------------------------
+isNewDay = ta.change(time("D"))
+var float dayStartEquity = na
+if barstate.isfirst or isNewDay
+    dayStartEquity := strategy.equity
+
+dayReturnPct = dayStartEquity > 0 ? (strategy.equity - dayStartEquity) / dayStartEquity * 100.0 : 0.0
+dailyLockout = dayReturnPct <= -math.abs(maxDailyLossPct)
+
+// -----------------------------
+// Position sizing
+// -----------------------------
+riskUsd = strategy.equity * (riskPctPerTrade / 100.0)
+stopDist = atr * atrStopMult
+qtyRaw = stopDist > 0 ? riskUsd / stopDist : 0.0
+qtyByLev = (strategy.equity * maxLeverage) / close
+qty = math.max(0.0, math.min(qtyRaw, qtyByLev))
+qtyUsd = qty * close
+
+longStop = close - stopDist
+longTake = close + atr * atrTpMult
+shortStop = close + stopDist
+shortTake = close - atr * atrTpMult
+
+// -----------------------------
+// Strategy orders
+// -----------------------------
+if not dailyLockout and longSignal and qty > 0
+    strategy.entry("L", strategy.long, qty=qty)
+    strategy.exit("L-X", "L", stop=longStop, limit=longTake)
+
+if not dailyLockout and shortSignal and qty > 0
+    strategy.entry("S", strategy.short, qty=qty)
+    strategy.exit("S-X", "S", stop=shortStop, limit=shortTake)
+
+exitLong = strategy.position_size[1] > 0 and strategy.position_size == 0
+exitShort = strategy.position_size[1] < 0 and strategy.position_size == 0
+
+// -----------------------------
+// Webhook JSON alerts
+// API expects fields: secret, action, symbol, product_id, side, qty_usd, strategy, timeframe
+// -----------------------------
+if not dailyLockout and longSignal and qtyUsd > 0
+    alert(
+         '{"secret":"' + webhookSecret + '","action":"BUY","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"BUY","qty_usd":' + str.tostring(qtyUsd) + ',"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         alert.freq_once_per_bar_close
+    )
+
+if not dailyLockout and shortSignal and qtyUsd > 0
+    alert(
+         '{"secret":"' + webhookSecret + '","action":"SELL","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"SELL","qty_usd":' + str.tostring(qtyUsd) + ',"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         alert.freq_once_per_bar_close
+    )
+
+if exitLong
+    alert(
+         '{"secret":"' + webhookSecret + '","action":"EXIT_LONG","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"SELL","qty_usd":1,"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         alert.freq_once_per_bar_close
+    )
+
+if exitShort
+    alert(
+         '{"secret":"' + webhookSecret + '","action":"EXIT_SHORT","symbol":"' + syminfo.tickerid + '","product_id":"' + productId + '","side":"BUY","qty_usd":1,"strategy":"' + strategyName + '","timeframe":"' + timeframe.period + '"}',
+         alert.freq_once_per_bar_close
+    )
+
+plot(emaFast, color=color.new(color.green, 0), title="EMA Fast")
+plot(emaSlow, color=color.new(color.red, 0), title="EMA Slow")
+plotchar(dailyLockout, title="Daily Lockout", char="X", location=location.top, color=color.red)
